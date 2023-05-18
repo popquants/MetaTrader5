@@ -1,0 +1,82 @@
+import MetaTrader5 as mt5
+import numpy as np
+import time
+
+def initialize():
+    mt5.initialize()
+
+def close_positions(symbol):
+    positions = mt5.positions_get(symbol=symbol)
+    for position in positions:
+        close_request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "position": position.ticket,
+            "type": mt5.ORDER_TYPE_SELL,
+            "volume": position.volume,
+            "price": mt5.symbol_info_tick(symbol).bid,
+            "magic": 0,
+            "comment": "Close Order"
+        }
+        result = mt5.order_send(close_request)
+        if result.retcode != mt5.TRADE_RETCODE_DONE:
+            print(f"Failed to close position {position.ticket}. Error code: {result.retcode}")
+        else:
+            print(f"Position {position.ticket} closed")
+
+def open_position(symbol, lot_size):
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": lot_size,
+        "type": mt5.ORDER_TYPE_BUY,
+        "price": mt5.symbol_info_tick(symbol).ask,
+        "magic": 0,
+        "comment": "Open Order"
+    }
+    result = mt5.order_send(request)
+    if result.retcode != mt5.TRADE_RETCODE_DONE:
+        print(f"Failed to open position. Error code: {result.retcode}")
+    else:
+        print("Position opened")
+
+def calculate_sma(symbol, timeframe, period):
+    rates = mt5.copy_rates_from(symbol, timeframe, time.time(), period)
+
+    if rates.size == 0:
+        return None
+
+    close_prices = rates["close"]  # Access close prices directly from the structured array
+
+    sma = np.mean(close_prices)
+
+    return sma
+
+def main():
+    symbol = "USDJPY"
+    lot_size = 0.01
+    timeframe = mt5.TIMEFRAME_M1  # 1-minute timeframe
+    sma_period_5 = 5  # SMA period for SMA 5
+    sma_period_10 = 10  # SMA period for SMA 10
+
+    initialize()
+
+    while True:
+        sma_5 = calculate_sma(symbol, timeframe, sma_period_5)
+        sma_10 = calculate_sma(symbol, timeframe, sma_period_10)
+
+        if sma_5 is not None and sma_10 is not None:
+            positions = mt5.positions_get(symbol=symbol)
+
+            if not positions:
+                if sma_5 > sma_10:
+                    open_position(symbol, lot_size)
+            else:
+                if sma_5 < sma_10:
+                    close_positions(symbol)
+
+        time.sleep(1)
+
+    mt5.shutdown()
+
+if __name__ == "__main__":
+    main()
